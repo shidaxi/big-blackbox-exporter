@@ -15,17 +15,17 @@ package prober
 
 import (
 	"context"
-	"github.com/btcsuite/btcd/rpcclient"
+	"encoding/json"
+	"fmt"
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/blackbox_exporter/config"
 	"github.com/prometheus/client_golang/prometheus"
 	"net/url"
+	"os/exec"
 	"strings"
 )
 
 func ProbeBTCRPC(ctx context.Context, target string, params url.Values, module config.Module, registry *prometheus.Registry, logger log.Logger) (success bool) {
-	disableTls := true
 	host := target
 	if strings.HasPrefix(target, "http://") {
 		host = strings.TrimLeft(target, "http://")
@@ -35,22 +35,10 @@ func ProbeBTCRPC(ctx context.Context, target string, params url.Values, module c
 	} else {
 	}
 
+	url := host
+
 	rpcUser := params.Get("user")
 	rpcPass := params.Get("pass")
-
-	connCfg := &rpcclient.ConnConfig{
-		Host:         host,
-		User:         rpcUser,
-		Pass:         rpcPass,
-		HTTPPostMode: true,       // Bitcoin core only supports HTTP POST mode
-		DisableTLS:   disableTls, // Bitcoin core does not provide TLS by default
-	}
-
-	client, err := rpcclient.New(connCfg, nil)
-	if err != nil {
-		level.Error(logger).Log("Error creating new BTC RPC client: " + err.Error())
-	}
-	defer client.Shutdown()
 
 	switch params.Get("module") {
 	case "btc_chain_info":
@@ -62,10 +50,29 @@ func ProbeBTCRPC(ctx context.Context, target string, params url.Values, module c
 		)
 		registry.MustRegister(blockNumberGaugeVec)
 
-		blockNumber, err := client.GetBlockCount()
+		cmd := exec.Command("curl", "-s", "--user", fmt.Sprintf("%s:%s", rpcUser, rpcPass),
+			fmt.Sprintf("%s", url), "-H", "content-type: text/plain;",
+			"-d", `{"jsonrpc":"1.0","id":"curltext","method":"getblockchaininfo","params":[]}`)
+		output, err := cmd.Output()
 		if err != nil {
-			level.Error(logger).Log("Error fetching block count: " + err.Error())
+			fmt.Println("Error executing curl command:", err)
 			return
+		}
+		// 解析输出的JSON数据
+		var result map[string]interface{}
+		if err := json.Unmarshal(output, &result); err != nil {
+			fmt.Println("Error parsing JSON:", err)
+			return
+		}
+		// 从结果中获取区块高度信息
+		if chainInfo, ok := result["result"].(map[string]interface{}); ok {
+			if blocks, ok := chainInfo["blocks"].(float64); ok {
+				blockHeightGauge.WithLabelValues(network, url).Set(float64(blocks))
+			} else {
+				fmt.Println("Error retrieving block height from response")
+			}
+		} else {
+			fmt.Println("Error retrieving chain info from response")
 		}
 
 		blockNumberGaugeVec.WithLabelValues(target).Set(float64(blockNumber))
