@@ -31,11 +31,11 @@ func ProbeBTCRPC(ctx context.Context, target string, params url.Values, module c
 		host = strings.TrimLeft(target, "http://")
 	} else if strings.HasPrefix(target, "https://") {
 		host = strings.TrimLeft(target, "https://")
-		disableTls = false
 	} else {
 	}
 
 	url := host
+	network := "mainnet"
 
 	rpcUser := params.Get("user")
 	rpcPass := params.Get("pass")
