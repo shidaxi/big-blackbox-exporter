@@ -43,6 +43,7 @@ var (
 		"btcrpc":  ProbeBTCRPC,
 		"json":    ProbeJSON,
 		"graphql": ProbeGraphQL,
+		"jsonrpc": ProbeJSONRPC,
 	}
 )
 

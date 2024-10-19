@@ -204,6 +204,7 @@ type Module struct {
 	BTCRPC  BTCRPCProbe   `yaml:"btcrpc,omitempty"`
 	JSON    JSONProbe     `yaml:"json,omitempty"`
 	GRAPHQL GRAPHQLProbe  `yaml:"graphql,omitempty"`
+	JSONRPC JSONRPCProbe  `yaml:"jsonrpc,omitempty"`
 }
 
 type HTTPProbe struct {
@@ -247,6 +248,9 @@ type JSONProbe struct {
 }
 
 type GRAPHQLProbe struct {
+}
+
+type JSONRPCProbe struct {
 }
 
 type HeaderMatch struct {
