@@ -63,3 +63,5 @@ modules:
     prober: json
   graphql:
     prober: graphql
+  jsonrpc:
+    prober: jsonrpc
