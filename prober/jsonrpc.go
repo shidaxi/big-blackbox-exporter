@@ -131,7 +131,6 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 					return false
 				}
 
-				// 添加调试日志
 				level.Debug(logger).Log("msg", "Raw result", "result", result)
 
 				var r string
@@ -143,7 +142,6 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 					}
 					r = fmt.Sprintf("%v", sr)
 				} else {
-					// 如果没有指定 JMESPath，将整个结果转换为字符串
 					jsonBytes, err := json.Marshal(result)
 					if err != nil {
 						level.Error(logger).Log("msg", "JSON marshaling failed", "error", err)
