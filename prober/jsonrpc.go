@@ -116,12 +116,11 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 		)
 		registry.MustRegister(jsonrpcGaugeVec)
 
-		var result string
-
 		disableBatch := params.Get("disableBatch") == "true"
 
 		if disableBatch {
 			for i, m := range methods {
+				var result string
 				err := eth.Client().Call(&result, m, args[i])
 				if err != nil {
 					level.Error(logger).Log("msg", "call failed, "+err.Error())
@@ -143,6 +142,7 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 
 			var batch []rpc.BatchElem
 			for i, m := range methods {
+				var result string
 				batch = append(batch, rpc.BatchElem{
 					Method: m,
 					Args:   stringsToSlice(args[i]),
