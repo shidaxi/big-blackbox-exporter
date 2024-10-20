@@ -15,6 +15,8 @@ package prober
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"math"
 	"math/big"
 	"net/url"
@@ -25,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/jmespath/go-jmespath"
 	"github.com/prometheus/blackbox_exporter/config"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -95,13 +98,14 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 	args := params["arg"]
 	decimals := params["decimal"]
 	tags := params["tag"]
+	resultJMESPath := params["resultJMESPath"]
 
-	if len(methods) == 0 || len(args) == 0 || len(decimals) == 0 || len(tags) == 0 {
+	if len(methods) == 0 || len(args) == 0 || len(decimals) == 0 || len(tags) == 0 || len(resultJMESPath) == 0 {
 		level.Error(logger).Log("msg", "methods is empty")
 		return false
 	}
 
-	if len(methods) != len(args) || len(methods) != len(decimals) || len(methods) != len(tags) {
+	if len(methods) != len(args) || len(methods) != len(decimals) || len(methods) != len(tags) || len(methods) != len(resultJMESPath) {
 		level.Error(logger).Log("msg", "methods, params, decimals, tags must be the same length")
 		return false
 	}
@@ -120,16 +124,38 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 
 		if disableBatch {
 			for i, m := range methods {
-				var result string
-				err := eth.Client().Call(&result, m, args[i])
+				var result interface{}
+				err := eth.Client().Call(&result, m, stringsToSlice(args[i])...)
 				if err != nil {
 					level.Error(logger).Log("msg", "call failed, "+err.Error())
 					return false
 				}
 
+				// 添加调试日志
+				level.Debug(logger).Log("msg", "Raw result", "result", result)
+
+				var r string
+				if resultJMESPath[i] != "" {
+					sr, err := jmespath.Search(resultJMESPath[i], result)
+					if err != nil {
+						level.Error(logger).Log("msg", "jmespath failed, "+err.Error())
+						return false
+					}
+					r = fmt.Sprintf("%v", sr)
+				} else {
+					// 如果没有指定 JMESPath，将整个结果转换为字符串
+					jsonBytes, err := json.Marshal(result)
+					if err != nil {
+						level.Error(logger).Log("msg", "JSON marshaling failed", "error", err)
+						return false
+					}
+					r = string(jsonBytes)
+				}
+
 				decimalsInt, _ := strconv.ParseInt(decimals[i], 10, 64)
-				level.Debug(logger).Log("msg", "result "+result)
-				value := resultToFloat64WithDecimals(result, decimalsInt)
+				level.Debug(logger).Log("msg", "result "+r)
+
+				value := resultToFloat64WithDecimals(r, decimalsInt)
 
 				jsonrpcGaugeVec.WithLabelValues(
 					target,
@@ -158,7 +184,17 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 			}
 			for i, e := range batch {
 				decimalsInt, _ := strconv.ParseInt(decimals[i], 10, 64)
-				r := *e.Result.(*string)
+				var r string
+				if resultJMESPath[i] != "" {
+					sr, err := jmespath.Search(resultJMESPath[i], e.Result)
+					if err != nil {
+						level.Error(logger).Log("msg", "jmespath failed, "+err.Error())
+						return false
+					}
+					r = fmt.Sprintf("%v", sr)
+				} else {
+					r = *e.Result.(*string)
+				}
 				level.Debug(logger).Log("msg", "result "+r)
 				value := resultToFloat64WithDecimals(r, decimalsInt)
 				jsonrpcGaugeVec.WithLabelValues(

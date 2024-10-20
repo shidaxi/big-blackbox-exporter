@@ -106,7 +106,7 @@ func TestStringsToSlice(t *testing.T) {
 
 func TestProbeJsonRPC(t *testing.T) {
 	ethRpcUrl := "https://rpc.ankr.com/eth"
-	suiRpcUrl := "https://sui-mainnet-endpoint.blockvision.org"
+	suiRpcUrl := "https://fullnode.mainnet.sui.io"
 	// Mock dependencies
 	mockLogger := log.NewNopLogger()
 
@@ -130,11 +130,12 @@ func TestProbeJsonRPC(t *testing.T) {
 			name:   "ETH eth_getBalance for Wallet Zero",
 			target: ethRpcUrl,
 			params: url.Values{
-				"module":   []string{"jsonrpc"},
-				"method":   []string{"eth_getBalance"},
-				"args":     []string{"0x0000000000000000000000000000000000000000"},
-				"decimals": []string{"18"},
-				"tag":      []string{"WalletZero"},
+				"module":         []string{"jsonrpc"},
+				"method":         []string{"eth_getBalance"},
+				"arg":            []string{"0x0000000000000000000000000000000000000000"},
+				"decimal":        []string{"18"},
+				"tag":            []string{"WalletZero"},
+				"resultJMESPath": []string{""},
 			},
 			module:         config.Module{},
 			expectedResult: true,
@@ -143,11 +144,12 @@ func TestProbeJsonRPC(t *testing.T) {
 			name:   "ETH eth_blockNumber",
 			target: ethRpcUrl,
 			params: url.Values{
-				"module":  []string{"jsonrpc"},
-				"method":  []string{"eth_blockNumber"},
-				"arg":     []string{""},
-				"decimal": []string{"0"},
-				"tag":     []string{"BlockNumber"},
+				"module":         []string{"jsonrpc"},
+				"method":         []string{"eth_blockNumber"},
+				"arg":            []string{""},
+				"decimal":        []string{"0"},
+				"tag":            []string{"BlockNumber"},
+				"resultJMESPath": []string{""},
 			},
 			module:         config.Module{},
 			expectedResult: true,
@@ -156,11 +158,12 @@ func TestProbeJsonRPC(t *testing.T) {
 			name:   "ETH multiple methods",
 			target: ethRpcUrl,
 			params: url.Values{
-				"module":  []string{"jsonrpc"},
-				"method":  []string{"eth_getBalance", "eth_blockNumber"},
-				"arg":     []string{"0x0000000000000000000000000000000000000000", ""},
-				"decimal": []string{"18", "0"},
-				"tag":     []string{"WalletZero", "BlockNumber"},
+				"module":         []string{"jsonrpc"},
+				"method":         []string{"eth_getBalance", "eth_blockNumber"},
+				"arg":            []string{"0x0000000000000000000000000000000000000000", ""},
+				"decimal":        []string{"18", "0"},
+				"tag":            []string{"WalletZero", "BlockNumber"},
+				"resultJMESPath": []string{"", ""},
 			},
 			module:         config.Module{},
 			expectedResult: true,
@@ -169,12 +172,28 @@ func TestProbeJsonRPC(t *testing.T) {
 			name:   "SUI sui_getLatestCheckpointSequenceNumber",
 			target: suiRpcUrl,
 			params: url.Values{
-				"module":       []string{"jsonrpc"},
-				"disableBatch": []string{"true"},
-				"method":       []string{"sui_getLatestCheckpointSequenceNumber"},
-				"arg":          []string{""},
-				"decimal":      []string{"0"},
-				"tag":          []string{"CheckpointSequenceNumber"},
+				"module":         []string{"jsonrpc"},
+				"disableBatch":   []string{"true"},
+				"method":         []string{"sui_getLatestCheckpointSequenceNumber"},
+				"arg":            []string{""},
+				"decimal":        []string{"0"},
+				"tag":            []string{"CheckpointSequenceNumber"},
+				"resultJMESPath": []string{""},
+			},
+			module:         config.Module{},
+			expectedResult: true,
+		},
+		{
+			name:   "SUI suix_getBalance",
+			target: suiRpcUrl,
+			params: url.Values{
+				"module":         []string{"jsonrpc"},
+				"disableBatch":   []string{"true"},
+				"method":         []string{"suix_getBalance"},
+				"arg":            []string{"0x0000000000000000000000000000000000000000000000000000000000000000,0x2::sui::SUI"},
+				"decimal":        []string{"6"},
+				"tag":            []string{"WalletZero"},
+				"resultJMESPath": []string{"totalBalance"},
 			},
 			module:         config.Module{},
 			expectedResult: true,
