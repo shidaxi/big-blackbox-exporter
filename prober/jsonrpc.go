@@ -15,7 +15,6 @@ package prober
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -38,6 +37,8 @@ import (
 // if the string is a boolean, convert it to a bool
 
 func stringsToSlice(s string) []interface{} {
+
+	s = strings.TrimSpace(s)
 
 	if s == "" {
 		return []interface{}{}
@@ -134,7 +135,8 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 				level.Debug(logger).Log("msg", "Raw result", "result", result)
 
 				var r string
-				if resultJMESPath[i] != "" {
+
+				if strings.TrimSpace(resultJMESPath[i]) != "" {
 					sr, err := jmespath.Search(resultJMESPath[i], result)
 					if err != nil {
 						level.Error(logger).Log("msg", "jmespath failed, "+err.Error())
@@ -142,12 +144,7 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 					}
 					r = fmt.Sprintf("%v", sr)
 				} else {
-					jsonBytes, err := json.Marshal(result)
-					if err != nil {
-						level.Error(logger).Log("msg", "JSON marshaling failed", "error", err)
-						return false
-					}
-					r = string(jsonBytes)
+					r = fmt.Sprintf("%v", result)
 				}
 
 				decimalsInt, _ := strconv.ParseInt(decimals[i], 10, 64)
@@ -158,7 +155,7 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 				jsonrpcGaugeVec.WithLabelValues(
 					target,
 					methods[i],
-					args[i],
+					strings.TrimSpace(args[i]),
 					tags[i],
 				).Set(value)
 			}
@@ -166,7 +163,7 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 
 			var batch []rpc.BatchElem
 			for i, m := range methods {
-				var result string
+				var result interface{}
 				batch = append(batch, rpc.BatchElem{
 					Method: m,
 					Args:   stringsToSlice(args[i]),
@@ -183,7 +180,7 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 			for i, e := range batch {
 				decimalsInt, _ := strconv.ParseInt(decimals[i], 10, 64)
 				var r string
-				if resultJMESPath[i] != "" {
+				if strings.TrimSpace(resultJMESPath[i]) != "" {
 					sr, err := jmespath.Search(resultJMESPath[i], e.Result)
 					if err != nil {
 						level.Error(logger).Log("msg", "jmespath failed, "+err.Error())
@@ -191,14 +188,14 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 					}
 					r = fmt.Sprintf("%v", sr)
 				} else {
-					r = *e.Result.(*string)
+					r = fmt.Sprintf("%v", e.Result)
 				}
 				level.Debug(logger).Log("msg", "result "+r)
 				value := resultToFloat64WithDecimals(r, decimalsInt)
 				jsonrpcGaugeVec.WithLabelValues(
 					target,
 					methods[i],
-					args[i],
+					strings.TrimSpace(args[i]),
 					tags[i],
 				).Set(value)
 			}
