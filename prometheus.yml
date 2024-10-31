@@ -70,27 +70,26 @@ scrape_configs:
       target_label: instance
     - target_label: __address__
       replacement: http://127.0.0.1:9115
-- job_name: sui_chain_info
+- job_name: rpc_chain_info
   metrics_path: /probe
   params:
     module:
       - jsonrpc
     disableBatch:
-      - true
+      - false
     method:
+      - eth_blockNumber
       - eth_blockNumber
     arg:
       - " "
-      - " "
-      - " "
+      - ""
     tag:
       - blocknumber
+      - gas
     decimal:
       - 0
-      - 0
-      - 0
+      - 40
     resultJMESPath:
-      - " "
       - " "
       - " "
   static_configs:
