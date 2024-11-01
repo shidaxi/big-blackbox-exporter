@@ -17,7 +17,12 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"math"
+	"math/big"
 	"net"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -141,4 +146,76 @@ func ipHash(ip net.IP) float64 {
 		h.Write(ip.To16())
 	}
 	return float64(h.Sum32())
+}
+
+func parseJSONRPCParams(input string) ([]interface{}, error) {
+	re := regexp.MustCompile(`\{[^}]+\}`)
+	objects := re.FindAllStringIndex(input, -1)
+
+	var result []interface{}
+	start := 0
+
+	for _, objIndex := range objects {
+		if start < objIndex[0] {
+			parts := strings.Split(input[start:objIndex[0]], ",")
+			for _, part := range parts {
+				if part == "" {
+					continue
+				}
+				if intVal, err := strconv.Atoi(part); err == nil {
+					result = append(result, intVal)
+				} else {
+					result = append(result, part)
+				}
+			}
+		}
+
+		objStr := input[objIndex[0]:objIndex[1]]
+		objStr = strings.Trim(objStr, "{}")
+		obj := make(map[string]string)
+
+		for _, part := range strings.Split(objStr, ",") {
+			kv := strings.SplitN(part, ":", 2)
+			if len(kv) != 2 {
+				return nil, fmt.Errorf("无效的键值对: %s", part)
+			}
+			obj[kv[0]] = kv[1]
+		}
+		result = append(result, obj)
+		start = objIndex[1]
+	}
+
+	if start < len(input) {
+		parts := strings.Split(input[start:], ",")
+		for _, part := range parts {
+			if part == "" {
+				continue
+			}
+			if intVal, err := strconv.Atoi(part); err == nil {
+				result = append(result, intVal)
+			} else if part == "true" || part == "false" {
+				// string "true" or "false" to bool
+				result = append(result, part == "true")
+			} else {
+				result = append(result, part)
+			}
+		}
+	}
+	return result, nil
+}
+
+func resultToFloat64WithDecimals(result string, decimals int64) float64 {
+	// Remove "0x" prefix if present
+	resultInt := new(big.Int)
+	resultInt.SetString(result, 0)
+	// if strings.HasPrefix(result, "0x") && len(result) > 30 {
+	// 	// hexadecimal
+	// 	resultInt.SetString(strings.TrimPrefix(result, "0x"), 16)
+	// } else {
+	// 	// decimal
+	// 	resultInt.SetString(result, 10)
+	// }
+	level.Debug(log.NewNopLogger()).Log("resultInt", resultInt)
+	f, _ := new(big.Float).Quo(new(big.Float).SetInt(resultInt), big.NewFloat(math.Pow10(int(decimals)))).Float64()
+	return f
 }

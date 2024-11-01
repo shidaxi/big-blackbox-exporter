@@ -15,10 +15,14 @@ package prober
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -257,4 +261,305 @@ func TestTCPHostnameParam(t *testing.T) {
 		t.Errorf("probe failed, response body: %v", rr.Body.String())
 	}
 
+}
+
+func TestJsonrpcModuleProbeParams(t *testing.T) {
+	// Start a local geth node for testing
+	gethCmd := exec.Command("anvil",
+		"--host", "127.0.0.1",
+		"--port", "58545", // Default HTTP-RPC port
+	)
+
+	// Start geth in background
+	if err := gethCmd.Start(); err != nil {
+		t.Fatalf("Failed to start geth: %v", err)
+	}
+
+	// Ensure geth is stopped after test
+	defer func() {
+		if err := gethCmd.Process.Kill(); err != nil {
+			t.Errorf("Failed to kill geth process: %v", err)
+		}
+	}()
+
+	// Load test config
+	c = &config.Config{
+		Modules: map[string]config.Module{
+			"jsonrpc": {
+				Prober:  "jsonrpc",
+				Timeout: 10 * time.Second,
+			},
+		},
+	}
+
+	// Start test prometheus server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handler(w, r, c, log.NewNopLogger(), &ResultHistory{}, 0.5, nil, nil, level.AllowNone())
+	}))
+	defer ts.Close()
+
+	// Wait for geth to be ready
+	time.Sleep(2 * time.Second)
+
+	wantResultRegex := "probe_jsonrpc{method=.*,params=.*,rpc=.*,tag=.*} .*"
+	tests := []struct {
+		name       string
+		reqURL     string
+		wantStatus int
+	}{
+		{
+			name: "eth_call contract owner address",
+			reqURL: url.Values{
+				"arg": []string{
+					"{to:0x3c3a81e81dc49a522a592e7622a7e711c06bf354,data:0x8da5cb5b},latest",
+					"{to:0x3c3a81e81dc49a522a592e7622a7e711c06bf354,data:0x8da5cb5b},latest",
+				},
+				"disableBatch":   []string{"true"},
+				"decimal":        []string{"40", "40"},
+				"method":         []string{"eth_call", "eth_call"},
+				"module":         []string{"jsonrpc", "jsonrpc"},
+				"resultJMESPath": []string{" ", " "},
+				"tag":            []string{"MntOwner1", "MntOwner2"},
+				"target":         []string{"https://rpc.ankr.com/eth", "https://1rpc.io/eth"},
+			}.Encode(),
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "eth_call contract owner address with batch",
+			reqURL: url.Values{
+				"arg": []string{
+					"{to:0x3c3a81e81dc49a522a592e7622a7e711c06bf354,data:0x8da5cb5b},latest",
+					"{to:0x3c3a81e81dc49a522a592e7622a7e711c06bf354,data:0x8da5cb5b},latest",
+				},
+				"disableBatch":   []string{"false"},
+				"decimal":        []string{"40", "40"},
+				"method":         []string{"eth_call", "eth_call"},
+				"module":         []string{"jsonrpc", "jsonrpc"},
+				"resultJMESPath": []string{" ", " "},
+				"tag":            []string{"MntOwner1", "MntOwner2"},
+				"target":         []string{"https://rpc.ankr.com/eth", "https://1rpc.io/eth"},
+			}.Encode(),
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "eth_getBlockByNumber with resultJMESPath",
+			reqURL: url.Values{
+				"arg":            []string{"safe,false"},
+				"decimal":        []string{"0"},
+				"disableBatch":   []string{"false"},
+				"method":         []string{"eth_getBlockByNumber"},
+				"module":         []string{"jsonrpc"},
+				"resultJMESPath": []string{"number"},
+				"tag":            []string{"SafeBlockNumber"},
+				"target":         []string{"https://rpc.ankr.com/eth"},
+			}.Encode(),
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "eth_getBlockByNumber local test",
+			reqURL: url.Values{
+				"arg":            []string{"safe,false"},
+				"decimal":        []string{"0"},
+				"disableBatch":   []string{"true"},
+				"method":         []string{"eth_getBlockByNumber"},
+				"module":         []string{"jsonrpc"},
+				"resultJMESPath": []string{"number"},
+				"tag":            []string{"SafeBlockNumber"},
+				"target":         []string{"http://localhost:58545"},
+			}.Encode(),
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+
+			// Define expected result pattern
+			req, err := http.NewRequest("GET", "?"+tt.reqURL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			rr := httptest.NewRecorder()
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				Handler(w, r, c, log.NewNopLogger(), &ResultHistory{}, 0.5, nil, nil, level.AllowNone())
+			})
+
+			handler.ServeHTTP(rr, req)
+
+			fmt.Println(rr.Body.String())
+
+			if status := rr.Code; status != tt.wantStatus {
+				t.Errorf("handler returned wrong status code: got %v want %v",
+					status, tt.wantStatus)
+			}
+
+			matched, err := regexp.MatchString(wantResultRegex, rr.Body.String())
+			if err != nil {
+				t.Fatalf("Failed to match regex: %v", err)
+			}
+
+			if !matched {
+				t.Errorf("Response body does not match expected pattern.\nGot: %s\nWant regex: %s",
+					rr.Body.String(), wantResultRegex)
+			}
+		})
+	}
+}
+
+func TestEthRpcModuleProbeParams(t *testing.T) {
+	// Load test config
+	c = &config.Config{
+		Modules: map[string]config.Module{
+			"contract_call": {
+				Prober:  "ethrpc",
+				Timeout: 10 * time.Second,
+			},
+			"chain_info": {
+				Prober:  "ethrpc",
+				Timeout: 10 * time.Second,
+			},
+			"balance": {
+				Prober:  "ethrpc",
+				Timeout: 10 * time.Second,
+			},
+			"erc20balance": {
+				Prober:  "ethrpc",
+				Timeout: 10 * time.Second,
+			},
+		},
+	}
+
+	// Start test prometheus server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handler(w, r, c, log.NewNopLogger(), &ResultHistory{}, 0.5, nil, nil, level.AllowNone())
+	}))
+	defer ts.Close()
+
+	// Create ABI methods
+	ownerMethod := ABIMethod{
+		Name: "owner",
+		Type: "function",
+		Outputs: []ABIOutput{{
+			Name: "",
+			Type: "address",
+		}},
+	}
+
+	balanceOfMethod := ABIMethod{
+		Name: "balanceOf",
+		Type: "function",
+		Inputs: []ABIInput{{
+			Name: "",
+			Type: "address",
+		}},
+		Outputs: []ABIOutput{{
+			Name: "",
+			Type: "int256",
+		}},
+	}
+
+	// Marshal to JSON
+	ownerABI, err := json.Marshal([]ABIMethod{ownerMethod})
+	if err != nil {
+		t.Fatalf("Failed to marshal owner ABI: %v", err)
+	}
+
+	balanceOfABI, err := json.Marshal([]ABIMethod{balanceOfMethod})
+	if err != nil {
+		t.Fatalf("Failed to marshal balanceOf ABI: %v", err)
+	}
+
+	tests := []struct {
+		name            string
+		reqURL          string
+		wantStatus      int
+		wantResultRegex string
+	}{
+		{
+			name: "contract_call owner test",
+			reqURL: url.Values{
+				"module": []string{"contract_call"},
+				"target": []string{"https://rpc.ankr.com/eth"},
+				"call":   []string{fmt.Sprintf("MntToken|0x3c3a81e81dc49a522a592e7622a7e711c06bf354|%s", string(ownerABI))},
+			}.Encode(),
+			wantStatus:      http.StatusOK,
+			wantResultRegex: "probe_ethrpc_contract_call{.*} .*",
+		},
+		{
+			name: "contract_call balanceOf test",
+			reqURL: url.Values{
+				"module": []string{"contract_call"},
+				"target": []string{"https://rpc.ankr.com/eth"},
+				"call":   []string{fmt.Sprintf("MntToken|0x3c3a81e81dc49a522a592e7622a7e711c06bf354|%s|0x207E804758e28F2b3fD6E4219671B327100b82f8", string(balanceOfABI))},
+			}.Encode(),
+			wantStatus:      http.StatusOK,
+			wantResultRegex: "probe_ethrpc_contract_call{.*} .*",
+		},
+		{
+			name: "chain_info test",
+			reqURL: url.Values{
+				"module": []string{"chain_info"},
+				"target": []string{"https://rpc.ankr.com/eth"},
+			}.Encode(),
+			wantStatus:      http.StatusOK,
+			wantResultRegex: "probe_ethrpc_block_number{.*} .*",
+		},
+		{
+			name: "balance test",
+			reqURL: url.Values{
+				"module":  []string{"balance"},
+				"target":  []string{"https://rpc.ankr.com/eth"},
+				"account": []string{"deployer2:0x207E804758e28F2b3fD6E4219671B327100b82f8", "deployer3:0x207E804758e28F2b3fD6E4219671B327100b82f8"},
+			}.Encode(),
+			wantStatus:      http.StatusOK,
+			wantResultRegex: "probe_ethrpc_balance{.*} .*",
+		},
+		{
+			name: "erc20balance test",
+			reqURL: url.Values{
+				"module":  []string{"erc20balance"},
+				"target":  []string{"https://rpc.ankr.com/eth"},
+				"token":   []string{"0x3c3a81e81dc49a522a592e7622a7e711c06bf354"},
+				"symbol":  []string{"MNT"},
+				"account": []string{"deployer2:0x207E804758e28F2b3fD6E4219671B327100b82f8", "deployer3:0x207E804758e28F2b3fD6E4219671B327100b82f8"},
+			}.Encode(),
+			wantStatus:      http.StatusOK,
+			wantResultRegex: "probe_ethrpc_erc20balance{.*} .*",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest("GET", "?"+tt.reqURL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			rr := httptest.NewRecorder()
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				Handler(w, r, c, log.NewNopLogger(), &ResultHistory{}, 0.5, nil, nil, level.AllowNone())
+			})
+
+			handler.ServeHTTP(rr, req)
+
+			fmt.Println("http://localhost:9115/probe" + req.URL.String())
+			fmt.Println(rr.Body.String())
+
+			if status := rr.Code; status != tt.wantStatus {
+				t.Errorf("handler returned wrong status code: got %v want %v",
+					status, tt.wantStatus)
+			}
+
+			// Check if response body matches expected regex pattern
+			matched, err := regexp.MatchString(tt.wantResultRegex, rr.Body.String())
+			if err != nil {
+				t.Fatalf("Failed to match regex: %v", err)
+			}
+			if !matched {
+				t.Errorf("Response body does not match expected pattern.\nGot: %s\nWant regex: %s",
+					rr.Body.String(), tt.wantResultRegex)
+			}
+		})
+	}
 }

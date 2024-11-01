@@ -252,3 +252,151 @@ func checkMetrics(expected map[string]map[string]map[string]struct{}, mfs []*dto
 		}
 	}
 }
+
+func TestParseJSONRPCParams(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected []interface{}
+		wantErr  bool
+	}{
+		{
+			name:  "Object with key-value pairs",
+			input: "{from:0xa,to:0xb,data:0xc}",
+			expected: []interface{}{
+				map[string]string{
+					"from": "0xa",
+					"to":   "0xb",
+					"data": "0xc",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:  "Multiple objects and values",
+			input: "{from:0xa,to:0xb},aa,{from:0xc,to:0xd},123,abc",
+			expected: []interface{}{
+				map[string]string{
+					"from": "0xa",
+					"to":   "0xb",
+				},
+				"aa",
+				map[string]string{
+					"from": "0xc",
+					"to":   "0xd",
+				},
+				123,
+				"abc",
+			},
+			wantErr: false,
+		},
+		{
+			name:     "Invalid key-value format",
+			input:    "{invalid}",
+			expected: nil,
+			wantErr:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := parseJSONRPCParams(tc.input)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if len(result) != len(tc.expected) {
+				t.Errorf("Expected %d results, got %d", len(tc.expected), len(result))
+				return
+			}
+
+			for i, exp := range tc.expected {
+				switch expected := exp.(type) {
+				case map[string]string:
+					got, ok := result[i].(map[string]string)
+					if !ok {
+						t.Errorf("Result[%d] expected map[string]string, got %T", i, result[i])
+						continue
+					}
+					if len(got) != len(expected) {
+						t.Errorf("Result[%d] expected map length %d, got %d", i, len(expected), len(got))
+						continue
+					}
+					for k, v := range expected {
+						if got[k] != v {
+							t.Errorf("Result[%d][%s] expected %s, got %s", i, k, v, got[k])
+						}
+					}
+				default:
+					if result[i] != expected {
+						t.Errorf("Result[%d] expected %v, got %v", i, expected, result[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestResultToFloat64WithDecimals(t *testing.T) {
+	testCases := []struct {
+		name     string
+		result   string
+		decimals int64
+		expected float64
+	}{
+		{
+			name:     "valid hex address",
+			result:   "0xffffffffffffffffffffffffffffffffffffffff",
+			decimals: 40,
+			expected: 146150163.73309029182036848327,
+		},
+		{
+			name:     "valid hex address",
+			result:   "0x000000ffffffffffffffffffffffffffffffffff",
+			decimals: 40,
+			expected: 8.71122859317602466466,
+		},
+		{
+			name:     "With 0x prefix",
+			result:   "0x3635C9ADC5DEA00000",
+			decimals: 18,
+			expected: 1000.0,
+		},
+		{
+			name:     "Decimals 6",
+			result:   "0x3b9aca00",
+			decimals: 6,
+			expected: 1000.0,
+		},
+		{
+			name:     "Zero value",
+			result:   "0x0",
+			decimals: 18,
+			expected: 0.0,
+		},
+		{
+			name:     "invalid hex",
+			result:   "invalid",
+			decimals: 18,
+			expected: 0.0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := resultToFloat64WithDecimals(tc.result, tc.decimals)
+			if result != tc.expected {
+				t.Errorf("Expected %f, but got %f", tc.expected, result)
+			}
+		})
+	}
+}
