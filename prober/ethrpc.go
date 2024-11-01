@@ -16,6 +16,11 @@ package prober
 import (
 	"context"
 	"encoding/hex"
+	"math/big"
+	"net/url"
+	"strconv"
+	"strings"
+
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
@@ -27,10 +32,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/blackbox_exporter/config"
 	"github.com/prometheus/client_golang/prometheus"
-	"math/big"
-	"net/url"
-	"strconv"
-	"strings"
 )
 
 type ValidCallParam struct {
@@ -425,16 +426,20 @@ func ProbeETHRPC(ctx context.Context, target string, params url.Values, module c
 		}
 		for i, e := range batch {
 			r := *e.Result.(*string)
-			level.Info(logger).Log("msg", "result "+r)
-			r = strings.ReplaceAll(r, "0x", "")
+			level.Debug(logger).Log("msg", "result "+r)
+			// r = strings.ReplaceAll(r, "0x", "")
 			var value float64
 			if outputType == "uint256" || outputType == "int256" {
 				n := new(big.Int)
-				n.SetString(r, 16)
+				n.SetString(r, 0)
 				value, _ = weiToEther(n).Float64()
+			} else if outputType == "address" {
+				// address
+				value = resultToFloat64WithDecimals(r, 40)
 			} else {
+				// bool
 				n := new(big.Int)
-				n.SetString(r, 16)
+				n.SetString(r, 0)
 				value, _ = new(big.Float).SetInt(n).Float64()
 			}
 			contractCallGaugeVec.WithLabelValues(

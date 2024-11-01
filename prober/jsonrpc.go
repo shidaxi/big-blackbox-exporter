@@ -15,9 +15,8 @@ package prober
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"math"
-	"math/big"
 	"net/url"
 	"strconv"
 	"strings"
@@ -30,60 +29,6 @@ import (
 	"github.com/prometheus/blackbox_exporter/config"
 	"github.com/prometheus/client_golang/prometheus"
 )
-
-// strings is a comma separated string, split it by comma, convert it to a slice of interface
-// if the string is a number, convert it to a int64
-// if the string is a string, convert it to a string
-// if the string is a boolean, convert it to a bool
-
-func stringsToSlice(s string) []interface{} {
-
-	s = strings.TrimSpace(s)
-
-	if s == "" {
-		return []interface{}{}
-	}
-
-	// Split the string by comma
-	parts := strings.Split(s, ",")
-
-	result := make([]interface{}, len(parts))
-
-	for i, part := range parts {
-		// Trim spaces
-		part = strings.TrimSpace(part)
-
-		// Try to convert to int64
-		if intVal, err := strconv.ParseInt(part, 10, 64); err == nil {
-			result[i] = intVal
-			continue
-		}
-
-		// Try to convert to bool
-		if boolVal, err := strconv.ParseBool(part); err == nil {
-			result[i] = boolVal
-			continue
-		}
-
-		// If it's neither a number nor a boolean, keep it as a string
-		result[i] = part
-	}
-
-	return result
-}
-
-func resultToFloat64WithDecimals(result string, decimals int64) float64 {
-	// Remove "0x" prefix if present
-	resultInt := new(big.Int)
-	if strings.HasPrefix(result, "0x") {
-		resultInt.SetString(strings.TrimPrefix(result, "0x"), 16)
-	} else {
-		resultInt.SetString(result, 10)
-	}
-	level.Debug(log.NewNopLogger()).Log("resultInt", resultInt)
-	f, _ := new(big.Float).Quo(new(big.Float).SetInt(resultInt), big.NewFloat(math.Pow10(int(decimals)))).Float64()
-	return f
-}
 
 func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module config.Module, registry *prometheus.Registry, logger log.Logger) (success bool) {
 	if !strings.HasPrefix(target, "http://") && !strings.HasPrefix(target, "https://") {
@@ -125,8 +70,13 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 
 		if disableBatch {
 			for i, m := range methods {
-				var result interface{}
-				err := eth.Client().Call(&result, m, stringsToSlice(args[i])...)
+				var result json.RawMessage
+				argsSlice, err := parseJSONRPCParams(args[i])
+				if err != nil {
+					level.Error(logger).Log("msg", "parseJSONRPCParams failed, "+err.Error())
+					return false
+				}
+				err = eth.Client().Call(&result, m, argsSlice...)
 				if err != nil {
 					level.Error(logger).Log("msg", "call failed, "+err.Error())
 					return false
@@ -137,14 +87,22 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 				var r string
 
 				if strings.TrimSpace(resultJMESPath[i]) != "" {
-					sr, err := jmespath.Search(resultJMESPath[i], result)
+					var jsonData interface{}
+					if err := json.Unmarshal(result, &jsonData); err != nil {
+						level.Error(logger).Log("msg", "Failed to unmarshal JSON result: "+err.Error())
+						return false
+					}
+					sr, err := jmespath.Search(resultJMESPath[i], jsonData)
 					if err != nil {
 						level.Error(logger).Log("msg", "jmespath failed, "+err.Error())
 						return false
 					}
 					r = fmt.Sprintf("%v", sr)
 				} else {
-					r = fmt.Sprintf("%v", result)
+					if err := json.Unmarshal(result, &r); err != nil {
+						level.Error(logger).Log("msg", "Failed to unmarshal JSON result: "+err.Error())
+						return false
+					}
 				}
 
 				decimalsInt, _ := strconv.ParseInt(decimals[i], 10, 64)
@@ -163,10 +121,15 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 
 			var batch []rpc.BatchElem
 			for i, m := range methods {
-				var result interface{}
+				var result json.RawMessage
+				argsSlice, err := parseJSONRPCParams(args[i])
+				if err != nil {
+					level.Error(logger).Log("msg", "parseJSONRPCParams failed, "+err.Error())
+					return false
+				}
 				batch = append(batch, rpc.BatchElem{
 					Method: m,
-					Args:   stringsToSlice(args[i]),
+					Args:   argsSlice,
 					Result: &result,
 					Error:  nil,
 				})
@@ -181,14 +144,24 @@ func ProbeJSONRPC(ctx context.Context, target string, params url.Values, module 
 				decimalsInt, _ := strconv.ParseInt(decimals[i], 10, 64)
 				var r string
 				if strings.TrimSpace(resultJMESPath[i]) != "" {
-					sr, err := jmespath.Search(resultJMESPath[i], e.Result)
+					rawMsg := e.Result.(*json.RawMessage)
+					var jsonData interface{}
+					if err := json.Unmarshal(*rawMsg, &jsonData); err != nil {
+						level.Error(logger).Log("msg", "Failed to unmarshal JSON result: "+err.Error())
+						return false
+					}
+					sr, err := jmespath.Search(resultJMESPath[i], jsonData)
 					if err != nil {
 						level.Error(logger).Log("msg", "jmespath failed, "+err.Error())
 						return false
 					}
 					r = fmt.Sprintf("%v", sr)
 				} else {
-					r = fmt.Sprintf("%v", e.Result)
+					rawMsg := e.Result.(*json.RawMessage)
+					if err := json.Unmarshal(*rawMsg, &r); err != nil {
+						level.Error(logger).Log("msg", "Failed to unmarshal JSON result: "+err.Error())
+						return false
+					}
 				}
 				level.Debug(logger).Log("msg", "result "+r)
 				value := resultToFloat64WithDecimals(r, decimalsInt)

@@ -13,97 +13,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func TestResultToFloat64WithDecimals(t *testing.T) {
-	testCases := []struct {
-		name     string
-		result   string
-		decimals int64
-		expected float64
-	}{
-		{
-			name:     "With 0x prefix",
-			result:   "0x3635C9ADC5DEA00000",
-			decimals: 18,
-			expected: 1000.0,
-		},
-		{
-			name:     "Decimals 6",
-			result:   "3b9aca00",
-			decimals: 6,
-			expected: 1000.0,
-		},
-		{
-			name:     "Zero value",
-			result:   "0x0",
-			decimals: 18,
-			expected: 0.0,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := resultToFloat64WithDecimals(tc.result, tc.decimals)
-			if result != tc.expected {
-				t.Errorf("Expected %f, but got %f", tc.expected, result)
-			}
-		})
-	}
-}
-
-func TestStringsToSlice(t *testing.T) {
-	testCases := []struct {
-		name     string
-		input    string
-		expected []interface{}
-	}{
-		{
-			name:     "Mixed types",
-			input:    "42,true,hello,0xabc",
-			expected: []interface{}{int64(42), true, "hello", "0xabc"},
-		},
-		{
-			name:     "Only integers",
-			input:    "1,2,3,4,5",
-			expected: []interface{}{int64(1), int64(2), int64(3), int64(4), int64(5)},
-		},
-		{
-			name:     "Only booleans",
-			input:    "true,false,true",
-			expected: []interface{}{true, false, true},
-		},
-		{
-			name:     "Only strings",
-			input:    "foo,bar,baz",
-			expected: []interface{}{"foo", "bar", "baz"},
-		},
-		{
-			name:     "Empty string",
-			input:    "",
-			expected: []interface{}{""},
-		},
-		{
-			name:     "With spaces",
-			input:    " 10 , true , hello ",
-			expected: []interface{}{int64(10), true, "hello"},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := stringsToSlice(tc.input)
-			if len(result) != len(tc.expected) {
-				t.Errorf("Expected slice length %d, but got %d", len(tc.expected), len(result))
-				return
-			}
-			for i, v := range result {
-				if v != tc.expected[i] {
-					t.Errorf("At index %d, expected %v (%T), but got %v (%T)", i, tc.expected[i], tc.expected[i], v, v)
-				}
-			}
-		})
-	}
-}
-
 func TestProbeJsonRPC(t *testing.T) {
 	ethRpcUrl := "https://rpc.ankr.com/eth"
 	suiRpcUrl := "https://fullnode.mainnet.sui.io"
@@ -149,6 +58,20 @@ func TestProbeJsonRPC(t *testing.T) {
 				"arg":            []string{""},
 				"decimal":        []string{"0"},
 				"tag":            []string{"BlockNumber"},
+				"resultJMESPath": []string{""},
+			},
+			module:         config.Module{},
+			expectedResult: true,
+		},
+		{
+			name:   "ETH eth_call",
+			target: ethRpcUrl,
+			params: url.Values{
+				"module":         []string{"jsonrpc"},
+				"method":         []string{"eth_call"},
+				"arg":            []string{"{from:,to:0x3c3a81e81dc49a522a592e7622a7e711c06bf354,data:0x8da5cb5b},latest"},
+				"decimal":        []string{"0"},
+				"tag":            []string{"MNTTokenOwner"},
 				"resultJMESPath": []string{""},
 			},
 			module:         config.Module{},
