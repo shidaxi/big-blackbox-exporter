@@ -9,3 +9,5 @@ builds:
       - arm64
     env:
       - CGO_ENABLED=0
+archives:
+  - format: binary
