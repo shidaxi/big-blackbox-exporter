@@ -39,6 +39,7 @@ type ValidCallParam struct {
 	ContractAddress string
 	MethodName      string
 	MethodArgs      string
+	OutputType      string
 }
 
 type ValidAccount struct {
@@ -416,6 +417,7 @@ func ProbeETHRPC(ctx context.Context, target string, params url.Values, module c
 				ContractAddress: contractAddress,
 				MethodName:      methodName,
 				MethodArgs:      contractArgsString,
+				OutputType:      outputType,
 			})
 
 		}
@@ -429,11 +431,11 @@ func ProbeETHRPC(ctx context.Context, target string, params url.Values, module c
 			level.Debug(logger).Log("msg", "result "+r)
 			// r = strings.ReplaceAll(r, "0x", "")
 			var value float64
-			if outputType == "uint256" || outputType == "int256" {
+			if validCallParams[i].OutputType == "uint256" || validCallParams[i].OutputType == "int256" {
 				n := new(big.Int)
 				n.SetString(r, 0)
 				value, _ = weiToEther(n).Float64()
-			} else if outputType == "address" {
+			} else if validCallParams[i].OutputType == "address" {
 				// address
 				value = resultToFloat64WithDecimals(r, 40)
 			} else {
