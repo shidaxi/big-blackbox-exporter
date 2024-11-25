@@ -75,6 +75,7 @@ func TestProbeETHRPC(t *testing.T) {
 					"Token1|0x3c3a81e81dc49a522a592e7622a7e711c06bf354|[{\"inputs\":[{\"name\":\"\",\"type\":\"address\"}],\"name\":\"balanceOf\",\"outputs\":[{\"type\":\"uint256\"}],\"type\":\"function\"}]|0x207E804758e28F2b3fD6E4219671B327100b82f8",
 					"Token1|0x3c3a81e81dc49a522a592e7622a7e711c06bf354|[{\"inputs\":[],\"name\":\"owner\",\"outputs\":[{\"type\":\"address\"}],\"type\":\"function\"}]",
 					"Token1|0x3c3a81e81dc49a522a592e7622a7e711c06bf354|[{\"inputs\":[],\"name\":\"totalSupply\",\"outputs\":[{\"type\":\"uint256\"}],\"type\":\"function\"}]",
+					"Token1|0x3c3a81e81dc49a522a592e7622a7e711c06bf354|[{\"inputs\":[],\"name\":\"totalSupply\",\"outputs\":[],\"type\":\"function\"}]",
 					"Token2|0xE6829d9a7eE3040e1276Fa75293Bde931859e8fA|[{\"inputs\":[],\"name\":\"totalSupply\",\"outputs\":[{\"type\":\"uint256\"}],\"type\":\"function\"}]",
 				},
 			},
